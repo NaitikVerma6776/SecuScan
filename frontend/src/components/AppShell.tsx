@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Background from './Background'
@@ -14,13 +14,14 @@ export default function AppShell({ children }: AppShellProps) {
 
     useShortcuts()
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+    const menuButtonRef = useRef<HTMLButtonElement>(null)
+    const drawerRef = useRef<HTMLDivElement>(null)
 
     const [sidebarExpanded, setSidebarExpanded] = useState(() => {
         const saved = localStorage.getItem('sidebar-expanded')
         return saved !== null ? JSON.parse(saved) : true
     })
 
-    // Brief hack to sync sidebar state without a full context provider
     useEffect(() => {
         const handleStorage = () => {
             const saved = localStorage.getItem('sidebar-expanded')
@@ -37,6 +38,43 @@ export default function AppShell({ children }: AppShellProps) {
     useEffect(() => {
         setMobileMenuOpen(false)
     }, [pathname])
+
+    useEffect(() => {
+        if (mobileMenuOpen) {
+            const firstFocusable = drawerRef.current?.querySelector<HTMLElement>(
+                'a, button, [tabindex]:not([tabindex="-1"])'
+            )
+            firstFocusable?.focus()
+        } else {
+            menuButtonRef.current?.focus()
+        }
+    }, [mobileMenuOpen])
+
+    const handleDrawerKeyDown = useCallback(
+        (e: React.KeyboardEvent<HTMLDivElement>) => {
+            if (e.key === 'Escape') {
+                setMobileMenuOpen(false)
+                return
+            }
+            if (e.key !== 'Tab') return
+            const focusable = Array.from(
+                drawerRef.current?.querySelectorAll<HTMLElement>(
+                    'a, button, [tabindex]:not([tabindex="-1"])'
+                ) ?? []
+            )
+            if (focusable.length === 0) return
+            const first = focusable[0]
+            const last = focusable[focusable.length - 1]
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault()
+                last.focus()
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault()
+                first.focus()
+            }
+        },
+        []
+    )
 
     const desktopSidebarWidth = sidebarExpanded ? 220 : 64
     const mobilePrimaryNav = [
@@ -57,7 +95,6 @@ export default function AppShell({ children }: AppShellProps) {
         { to: routes.settings, label: 'Settings' },
     ]
 
-
     return (
         <>
             <Background state="idle" />
@@ -65,9 +102,12 @@ export default function AppShell({ children }: AppShellProps) {
                 <Sidebar />
                 <div className="lg:hidden fixed inset-x-0 top-0 z-40 bg-secondary border-b border-accent-silver/10 h-14 px-4 flex items-center justify-between">
                     <button
+                        ref={menuButtonRef}
                         onClick={() => setMobileMenuOpen((prev) => !prev)}
                         className="w-9 h-9 border border-accent-silver/20 flex items-center justify-center text-silver-bright bg-charcoal-dark"
                         aria-label="Toggle navigation menu"
+                        aria-expanded={mobileMenuOpen}
+                        aria-controls="mobile-nav-drawer"
                     >
                         <span className="material-symbols-outlined text-[20px]">
                             {mobileMenuOpen ? 'close' : 'menu'}
@@ -78,10 +118,19 @@ export default function AppShell({ children }: AppShellProps) {
                 </div>
 
                 {mobileMenuOpen && (
-                    <div className="lg:hidden fixed inset-0 z-40 bg-black/60" onClick={() => setMobileMenuOpen(false)}>
+                    <div
+                        className="lg:hidden fixed inset-0 z-40 bg-black/60"
+                        onClick={() => setMobileMenuOpen(false)}
+                    >
                         <div
+                            id="mobile-nav-drawer"
+                            ref={drawerRef}
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label="Navigation menu"
                             className="absolute top-14 left-0 right-0 bg-secondary border-b border-accent-silver/10 p-4"
                             onClick={(e) => e.stopPropagation()}
+                            onKeyDown={handleDrawerKeyDown}
                         >
                             <nav className="grid grid-cols-2 gap-2">
                                 {mobileDrawerNav.map((item) => (
@@ -104,7 +153,7 @@ export default function AppShell({ children }: AppShellProps) {
                     </div>
                 )}
 
-                <main 
+                <main
                     className="flex-1 overflow-auto transition-all duration-300 ease-in-out ml-0 lg:ml-[var(--sidebar-width)] pt-14 lg:pt-0 pb-16 lg:pb-0"
                     style={{ '--sidebar-width': `${desktopSidebarWidth}px` } as React.CSSProperties}
                 >
